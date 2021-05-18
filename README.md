@@ -1,3 +1,3 @@
 # RequestSocket
 
-A description of this package.
+Request socket is a lightweight request/response API built on Apple's URLSession and Combine frameworks.
