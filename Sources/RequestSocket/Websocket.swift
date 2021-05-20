@@ -36,6 +36,18 @@ public final class Websocket : NSObject {
 
 public extension Websocket {
     func sendRequest<Object: Encodable>(payload: Object) -> AnyPublisher<Data, Error> {
+        guard let data = try? encoder.encode(payload) else {
+            return Fail(error: Failure.encoding).eraseToAnyPublisher()
+        }
+        
+        return send(data)
+    }
+    
+    func send(_ data: Data) -> AnyPublisher<Data, Error> {
+        guard let payload = String(data: data, encoding: .utf8) else {
+            return Fail(error: Failure.encoding).eraseToAnyPublisher()
+        }
+        
         let request = WSRequest(payload: payload)
         
         guard let requestData = try? encoder.encode(request) else {
