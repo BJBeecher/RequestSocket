@@ -17,7 +17,7 @@ protocol WebsocketDelegate : AnyObject {
 
 extension Websocket : WebsocketDelegate {
     func task(didRecieveData data: Data) {
-        guard let info = try? decoder.decode(WSResponse.self, from: data) else { fatalError("bad server message") }
+        guard let info = try? decoder.decode(WSResponseInfo.self, from: data) else { fatalError("bad server message") }
         let tuple = (requestId: info.requestId, data: data)
         subject.send(tuple)
     }

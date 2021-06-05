@@ -35,35 +35,25 @@ public final class Websocket : NSObject {
 // public API
 
 public extension Websocket {
-    func sendRequest<Object: Encodable>(payload: Object) -> AnyPublisher<Data, Error> {
-        guard let data = try? encoder.encode(payload) else {
-            return Fail(error: Failure.encoding).eraseToAnyPublisher()
-        }
-        
-        return send(data)
-    }
-    
-    func send(_ data: Data) -> AnyPublisher<Data, Error> {
-        guard let payload = String(data: data, encoding: .utf8) else {
-            return Fail(error: Failure.encoding).eraseToAnyPublisher()
-        }
-        
+    func send<Payload: Encodable, Output: Decodable>(payload: Payload) -> AnyPublisher<Output, Error> {
         let request = WSRequest(payload: payload)
         
-        guard let requestData = try? encoder.encode(request) else {
+        guard let data = try? encoder.encode(request) else {
             return Fail(error: Failure.encoding).eraseToAnyPublisher()
         }
         
         let subscription = subject
             .filter { $0.requestId == request.id }
             .map(\.data)
+            .decode(type: WSResponse<Output>.self, decoder: decoder)
+            .map(\.payload)
             .eraseToAnyPublisher()
         
-        return Deferred { [self] () -> AnyPublisher<Data, Error> in
+        return Deferred { [self] () -> AnyPublisher<Output, Error> in
             if case .opened(let task) = connectionStatus {
-                task.send(requestData, delegate: self)
+                task.send(data, delegate: self)
             } else {
-                pendingRequests.insert(requestData)
+                pendingRequests.insert(data)
                 reconnect()
             }
             

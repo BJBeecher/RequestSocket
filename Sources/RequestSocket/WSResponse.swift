@@ -7,6 +7,7 @@
 
 import Foundation
 
-struct WSResponse : Decodable {
+struct WSResponse<Payload: Decodable> : Decodable {
     let requestId : UUID
+    let payload : Payload
 }

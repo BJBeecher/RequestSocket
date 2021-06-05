@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct WSRequest : Encodable {
+struct WSRequest<Payload: Encodable> : Encodable {
     let id = UUID()
-    let payload : String
+    let payload : Payload
 }
