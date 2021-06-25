@@ -6,11 +6,12 @@
 //
 
 import Foundation
+import Combine
 
 protocol WebsocketInterface {
     func startListener(delegate: WebsocketDelegate)
     func startPinger(delegate: WebsocketDelegate)
-    func send(_ data: Data, delegate: WebsocketDelegate)
+    func send(_ data: Data) -> AnyPublisher<Void, Error>
 }
 
 // conformance
@@ -42,11 +43,15 @@ extension URLSessionWebSocketTask : WebsocketInterface {
         }
     }
     
-    func send(_ data: Data, delegate: WebsocketDelegate){
-        send(.data(data)) { error in
-            if let error = error {
-                delegate.task(didDisconnect: Failure.messageError(error))
+    func send(_ data: Data) -> AnyPublisher<Void, Error> {
+        return Deferred {
+            Future { promise in
+                self.send(.data(data)) { error in
+                    if let error = error {
+                        promise(.failure(error))
+                    }
+                }
             }
-        }
+        }.eraseToAnyPublisher()
     }
 }

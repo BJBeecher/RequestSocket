@@ -11,3 +11,14 @@ enum Status {
     case opened(socket: WebsocketInterface)
     case closed(error: Error? = nil)
 }
+
+extension Status {
+    var isConnected : Bool {
+        switch self {
+            case .opened(socket: _):
+                return true
+            case .closed(error: _):
+                return false
+        }
+    }
+}

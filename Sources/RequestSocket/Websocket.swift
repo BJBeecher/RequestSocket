@@ -10,31 +10,39 @@ import Combine
 
 // conformance
 
-public final class Websocket : NSObject {
+public final class Websocket : NSObject, ObservableObject {
     
     let url : URL
-    let config : URLSessionConfiguration
     
     let encoder : JSONEncoder
     let decoder : JSONDecoder
     
-    public init(url: URL, config: URLSessionConfiguration = .default,  encoder: JSONEncoder = .init(), decoder: JSONDecoder = .init()) {
+    public init(url: URL, encoder: JSONEncoder = .init(), decoder: JSONDecoder = .init()) {
         self.url = url
-        self.config = config
         self.encoder = encoder
         self.decoder = decoder
     }
     
-    var connectionStatus : Status = .closed(error: nil)
+    @Published var connectionStatus : Status = .closed(error: nil)
     
-    var pendingRequests = Set<Data>()
-    
-    let subject = PassthroughSubject<(requestId: UUID, data: Data), Error>()
+    let requestSubject = PassthroughSubject<(requestId: UUID, data: Data), Never>()
 }
 
 // public API
 
 public extension Websocket {
+    func connectPublisher(withConfiguration config: URLSessionConfiguration) -> AnyPublisher<Bool, Never> {
+        Deferred { [self] () -> AnyPublisher<Bool, Never> in
+            let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+            let task = session.webSocketTask(with: url)
+            task.resume()
+            
+            return $connectionStatus
+                .map(\.isConnected)
+                .eraseToAnyPublisher()
+        }.eraseToAnyPublisher()
+    }
+    
     func send<Payload: Encodable, Output: Decodable>(payload: Payload) -> AnyPublisher<Output, Error> {
         let request = WSRequest(payload: payload)
         
@@ -42,22 +50,14 @@ public extension Websocket {
             return Fail(error: Failure.encoding).eraseToAnyPublisher()
         }
         
-        let subscription = subject
-            .filter { $0.requestId == request.id }
-            .map(\.data)
-            .decode(type: WSResponse<Output>.self, decoder: decoder)
-            .map(\.payload)
-            .eraseToAnyPublisher()
-        
         return Deferred { [self] () -> AnyPublisher<Output, Error> in
-            if case .opened(let task) = connectionStatus {
-                task.send(data, delegate: self)
+            if case .opened(let task) = self.connectionStatus {
+                return task.send(data)
+                    .flatMap { requestPublisher(requestId: request.id) }
+                    .eraseToAnyPublisher()
             } else {
-                pendingRequests.insert(data)
-                reconnect()
+                return Fail(error: Failure.notConnected).eraseToAnyPublisher()
             }
-            
-            return subscription
         }.eraseToAnyPublisher()
     }
 }
@@ -65,20 +65,13 @@ public extension Websocket {
 // internal API
 
 extension Websocket {
-    func connect(){
-        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        let task = session.webSocketTask(with: url)
-        task.resume()
-    }
-    
-    func reconnect(retryInterval seconds: TimeInterval = 3){
-        guard case .closed(_) = connectionStatus else { return }
-        
-        connect()
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds){ [weak self] in
-            self?.reconnect(retryInterval: seconds)
-        }
+    func requestPublisher<Output: Decodable>(requestId: UUID) -> AnyPublisher<Output, Error> {
+        requestSubject
+            .filter { $0.requestId == requestId }
+            .map(\.data)
+            .decode(type: WSResponse<Output>.self, decoder: decoder)
+            .map(\.payload)
+            .eraseToAnyPublisher()
     }
 }
 
@@ -86,15 +79,8 @@ extension Websocket {
 
 extension Websocket : URLSessionWebSocketDelegate {
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?){
-        connectionStatus = .opened(socket: webSocketTask)
-        
         webSocketTask.startListener(delegate: self)
         webSocketTask.startPinger(delegate: self)
-        
-        pendingRequests.forEach { data in
-            webSocketTask.send(data, delegate: self)
-        }
-        
-        pendingRequests = Set()
+        connectionStatus = .opened(socket: webSocketTask)
     }
 }

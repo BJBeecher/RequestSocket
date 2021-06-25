@@ -13,4 +13,5 @@ enum Failure : Error {
     case listenerError(Error)
     case pingError(Error)
     case messageError(Error)
+    case notConnected
 }

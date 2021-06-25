@@ -17,14 +17,16 @@ protocol WebsocketDelegate : AnyObject {
 
 extension Websocket : WebsocketDelegate {
     func task(didRecieveData data: Data) {
-        guard let info = try? decoder.decode(WSResponseInfo.self, from: data) else { fatalError("bad server message") }
-        let tuple = (requestId: info.requestId, data: data)
-        subject.send(tuple)
+        do {
+            let info = try decoder.decode(WSResponseInfo.self, from: data)
+            let tuple = (requestId: info.requestId, data: data)
+            requestSubject.send(tuple)
+        } catch {
+            print(error)
+        }
     }
     
     func task(didDisconnect error: Failure) {
         connectionStatus = .closed(error: error)
-        subject.send(completion: .failure(error))
-        reconnect()
     }
 }
