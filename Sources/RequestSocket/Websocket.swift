@@ -31,7 +31,7 @@ public final class Websocket : NSObject, ObservableObject {
 // public API
 
 public extension Websocket {
-    func connectPublisher(withConfiguration config: URLSessionConfiguration) -> AnyPublisher<Bool, Never> {
+    func connect(withConfiguration config: URLSessionConfiguration) -> AnyPublisher<Bool, Never> {
         Deferred { [self] () -> AnyPublisher<Bool, Never> in
             let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
             let task = session.webSocketTask(with: url)
