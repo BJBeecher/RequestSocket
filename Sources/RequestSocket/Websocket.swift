@@ -25,7 +25,7 @@ public final class Websocket : NSObject, ObservableObject {
     
     @Published var connectionStatus : Status = .closed(error: nil)
     
-    let requestSubject = PassthroughSubject<(requestId: UUID, data: Data), Never>()
+    let requestSubject = PassthroughSubject<(requestId: UUID, data: Data), Error>()
 }
 
 // public API
@@ -43,7 +43,7 @@ public extension Websocket {
         }.eraseToAnyPublisher()
     }
     
-    func send<Payload: Encodable, Output: Decodable>(payload: Payload) -> AnyPublisher<Output, Error> {
+    func send<Payload: Encodable, Output: Decodable>(payload: Payload, withTimeout timeout: DispatchQueue.SchedulerTimeType.Stride? = 8) -> AnyPublisher<Output, Error> {
         let request = WSRequest(payload: payload)
         
         guard let data = try? encoder.encode(request) else {
@@ -53,7 +53,7 @@ public extension Websocket {
         return Deferred { [self] () -> AnyPublisher<Output, Error> in
             if case .opened(let task) = self.connectionStatus {
                 return task.send(data)
-                    .flatMap { requestPublisher(requestId: request.id) }
+                    .flatMap { requestPublisher(requestId: request.id, timeout: timeout) }
                     .eraseToAnyPublisher()
             } else {
                 return Fail(error: Failure.notConnected).eraseToAnyPublisher()
@@ -65,13 +65,23 @@ public extension Websocket {
 // internal API
 
 extension Websocket {
-    func requestPublisher<Output: Decodable>(requestId: UUID) -> AnyPublisher<Output, Error> {
-        requestSubject
-            .filter { $0.requestId == requestId }
-            .map(\.data)
-            .decode(type: WSResponse<Output>.self, decoder: decoder)
-            .map(\.payload)
-            .eraseToAnyPublisher()
+    func requestPublisher<Output: Decodable>(requestId: UUID, timeout: DispatchQueue.SchedulerTimeType.Stride?) -> AnyPublisher<Output, Error> {
+        if let to = timeout {
+            return requestSubject
+                .first { $0.requestId == requestId }
+                .timeout(to, scheduler: DispatchQueue.main)
+                .map(\.data)
+                .decode(type: WSResponse<Output>.self, decoder: decoder)
+                .map(\.payload)
+                .eraseToAnyPublisher()
+        } else {
+            return requestSubject
+                .filter { $0.requestId == requestId }
+                .map(\.data)
+                .decode(type: WSResponse<Output>.self, decoder: decoder)
+                .map(\.payload)
+                .eraseToAnyPublisher()
+        }
     }
 }
 

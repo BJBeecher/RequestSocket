@@ -28,5 +28,6 @@ extension Websocket : WebsocketDelegate {
     
     func task(didDisconnect error: Failure) {
         connectionStatus = .closed(error: error)
+        requestSubject.send(completion: .failure(error))
     }
 }

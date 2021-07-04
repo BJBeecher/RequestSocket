@@ -14,4 +14,5 @@ enum Failure : Error {
     case pingError(Error)
     case messageError(Error)
     case notConnected
+    case timeout
 }
