@@ -11,3 +11,5 @@ struct WSResponse<Payload: Decodable> : Decodable {
     let requestId : UUID
     let payload : Payload
 }
+
+extension WSResponse : Encodable where Payload : Encodable {}
