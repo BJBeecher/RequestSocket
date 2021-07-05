@@ -10,54 +10,61 @@ import Combine
 
 // conformance
 
-public final class Websocket : NSObject, ObservableObject {
-    
-    let url : URL
+public final class Websocket {
     
     let encoder : JSONEncoder
     let decoder : JSONDecoder
     
-    public init(url: URL, encoder: JSONEncoder = .init(), decoder: JSONDecoder = .init()) {
-        self.url = url
+    let delegate : WebsocketDelegateInterface
+    let sessionType : SessionInterface.Type
+    
+    init(encoder: JSONEncoder = .init(), decoder: JSONDecoder = .init(), delegate: WebsocketDelegateInterface, sessionType: SessionInterface.Type) {
         self.encoder = encoder
         self.decoder = decoder
+        self.delegate = delegate
+        self.sessionType = sessionType
     }
     
-    @Published var connectionStatus : Status = .closed(error: nil)
-    
-    let requestSubject = PassthroughSubject<(requestId: UUID, data: Data), Error>()
+    public convenience init(encoder: JSONEncoder = .init(), decoder: JSONDecoder = .init()) {
+        self.init(encoder: encoder, decoder: decoder, delegate: WebsocketDelegate(decoder: decoder), sessionType: URLSession.self)
+    }
 }
 
 // public API
 
 public extension Websocket {
-    func connect(withConfiguration config: URLSessionConfiguration) -> AnyPublisher<Bool, Never> {
+    func connect(withRequest request: URLRequest) -> AnyPublisher<Bool, Never> {
         Deferred { [self] () -> AnyPublisher<Bool, Never> in
-            let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-            let task = session.webSocketTask(with: url)
-            task.resume()
+            let session = sessionType.init(configuration: .default, delegate: delegate, delegateQueue: nil)
+            session.startWebsocket(with: request)
             
-            return $connectionStatus
+            return delegate.connectionSubject
                 .map(\.isConnected)
                 .eraseToAnyPublisher()
         }.eraseToAnyPublisher()
     }
     
     func send<Payload: Encodable, Output: Decodable>(payload: Payload, withTimeout timeout: DispatchQueue.SchedulerTimeType.Stride? = 8) -> AnyPublisher<Output, Error> {
-        let request = WSRequest(payload: payload)
-        
-        guard let data = try? encoder.encode(request) else {
-            return Fail(error: Failure.encoding).eraseToAnyPublisher()
-        }
-        
-        return Deferred { [self] () -> AnyPublisher<Output, Error> in
-            if case .opened(let task) = self.connectionStatus {
-                return task.send(data)
-                    .flatMap { requestPublisher(requestId: request.id, timeout: timeout) }
-                    .eraseToAnyPublisher()
-            } else {
+        Deferred { [self] () -> AnyPublisher<Output, Error> in
+            let request = WSRequest(payload: payload)
+            
+            guard let data = try? encoder.encode(request) else {
+                return Fail(error: Failure.encoding).eraseToAnyPublisher()
+            }
+            
+            guard case .opened(let task) = self.delegate.connectionStatus else {
                 return Fail(error: Failure.notConnected).eraseToAnyPublisher()
             }
+            
+            return task.send(data)
+                .flatMap { _ -> AnyPublisher<Output, Error> in
+                    if let to = timeout {
+                        return timeoutPublisher(requestId: request.id, timeout: to)
+                    } else {
+                        return continuousPublisher(requestId: request.id)
+                    }
+                }
+                .eraseToAnyPublisher()
         }.eraseToAnyPublisher()
     }
 }
@@ -65,32 +72,22 @@ public extension Websocket {
 // internal API
 
 extension Websocket {
-    func requestPublisher<Output: Decodable>(requestId: UUID, timeout: DispatchQueue.SchedulerTimeType.Stride?) -> AnyPublisher<Output, Error> {
-        if let to = timeout {
-            return requestSubject
-                .first { $0.requestId == requestId }
-                .timeout(to, scheduler: DispatchQueue.main)
-                .map(\.data)
-                .decode(type: WSResponse<Output>.self, decoder: decoder)
-                .map(\.payload)
-                .eraseToAnyPublisher()
-        } else {
-            return requestSubject
-                .filter { $0.requestId == requestId }
-                .map(\.data)
-                .decode(type: WSResponse<Output>.self, decoder: decoder)
-                .map(\.payload)
-                .eraseToAnyPublisher()
-        }
+    func timeoutPublisher<Output: Decodable>(requestId: UUID, timeout: DispatchQueue.SchedulerTimeType.Stride) -> AnyPublisher<Output, Error> {
+        delegate.requestSubject
+            .first { $0.requestId == requestId }
+            .timeout(timeout, scheduler: DispatchQueue.main)
+            .map(\.data)
+            .decode(type: WSResponse<Output>.self, decoder: decoder)
+            .map(\.payload)
+            .eraseToAnyPublisher()
     }
-}
-
-// foundation delegate conformance
-
-extension Websocket : URLSessionWebSocketDelegate {
-    public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?){
-        webSocketTask.startListener(delegate: self)
-        webSocketTask.startPinger(delegate: self)
-        connectionStatus = .opened(socket: webSocketTask)
+    
+    func continuousPublisher<Output: Decodable>(requestId: UUID) -> AnyPublisher<Output, Error> {
+        delegate.requestSubject
+            .filter { $0.requestId == requestId }
+            .map(\.data)
+            .decode(type: WSResponse<Output>.self, decoder: decoder)
+            .map(\.payload)
+            .eraseToAnyPublisher()
     }
 }

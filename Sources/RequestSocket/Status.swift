@@ -8,7 +8,7 @@
 import Foundation
 
 enum Status {
-    case opened(socket: WebsocketInterface)
+    case opened(socket: TaskInterface)
     case closed(error: Error? = nil)
 }
 

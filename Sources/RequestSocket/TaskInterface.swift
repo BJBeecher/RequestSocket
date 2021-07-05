@@ -8,15 +8,15 @@
 import Foundation
 import Combine
 
-protocol WebsocketInterface {
+protocol TaskInterface {
     func startListener(delegate: WebsocketDelegate)
-    func startPinger(delegate: WebsocketDelegate)
+    func startPinger(delegate: WebsocketDelegate, interval: TimeInterval)
     func send(_ data: Data) -> AnyPublisher<Void, Error>
 }
 
 // conformance
 
-extension URLSessionWebSocketTask : WebsocketInterface {
+extension URLSessionWebSocketTask : TaskInterface {
     func startListener(delegate: WebsocketDelegate){
         recieveData { [weak self] result in
             switch result {
@@ -31,20 +31,20 @@ extension URLSessionWebSocketTask : WebsocketInterface {
         }
     }
     
-    func startPinger(delegate: WebsocketDelegate){
+    func startPinger(delegate: WebsocketDelegate, interval: TimeInterval = 10){
         sendPing { [weak self] error in
             if let error = error {
                 delegate.task(didDisconnect: Failure.pingError(error))
             } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5){
-                    self?.startPinger(delegate: delegate)
+                DispatchQueue.main.asyncAfter(deadline: .now() + interval){
+                    self?.startPinger(delegate: delegate, interval: interval)
                 }
             }
         }
     }
     
     func send(_ data: Data) -> AnyPublisher<Void, Error> {
-        return Deferred {
+        Deferred {
             Future { promise in
                 self.send(.data(data)) { error in
                     if let error = error {
