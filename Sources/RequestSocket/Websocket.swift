@@ -45,27 +45,27 @@ public extension Websocket {
     }
     
     func send<Payload: Encodable, Output: Decodable>(payload: Payload, withTimeout timeout: DispatchQueue.SchedulerTimeType.Stride? = 8) -> AnyPublisher<Output, Error> {
-        Deferred { [self] () -> AnyPublisher<Output, Error> in
-            let request = WSRequest(payload: payload)
-            
-            guard let data = try? encoder.encode(request) else {
-                return Fail(error: Failure.encoding).eraseToAnyPublisher()
-            }
-            
-            guard case .opened(let task) = self.delegate.connectionStatus else {
-                return Fail(error: Failure.notConnected).eraseToAnyPublisher()
-            }
-            
-            return task.send(data)
-                .flatMap { _ -> AnyPublisher<Output, Error> in
-                    if let to = timeout {
-                        return timeoutPublisher(requestId: request.id, timeout: to)
-                    } else {
-                        return continuousPublisher(requestId: request.id)
-                    }
+        let request = WSRequest(payload: payload)
+        
+        guard let data = try? encoder.encode(request) else {
+            fatalError()
+            return Fail(error: Failure.encoding).eraseToAnyPublisher()
+        }
+        
+        guard case .opened(let task) = self.delegate.connectionStatus else {
+            fatalError()
+            return Fail(error: Failure.notConnected).eraseToAnyPublisher()
+        }
+        
+        return task.send(data)
+            .flatMap { [self] _ -> AnyPublisher<Output, Error> in
+                if let to = timeout {
+                    return timeoutPublisher(requestId: request.id, timeout: to)
+                } else {
+                    return continuousPublisher(requestId: request.id)
                 }
-                .eraseToAnyPublisher()
-        }.eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
     }
 }
 

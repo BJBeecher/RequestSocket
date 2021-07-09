@@ -44,11 +44,13 @@ extension URLSessionWebSocketTask : TaskInterface {
     }
     
     func send(_ data: Data) -> AnyPublisher<Void, Error> {
-        Deferred {
+        Deferred { () -> Future<Void, Error> in
             Future { promise in
                 self.send(.data(data)) { error in
                     if let error = error {
                         promise(.failure(error))
+                    } else {
+                        promise(.success(()))
                     }
                 }
             }
