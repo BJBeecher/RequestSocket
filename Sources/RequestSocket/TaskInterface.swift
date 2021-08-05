@@ -9,15 +9,15 @@ import Foundation
 import Combine
 
 protocol TaskInterface {
-    func startListener(delegate: WebsocketDelegate)
-    func startPinger(delegate: WebsocketDelegate, interval: TimeInterval)
+    func startListener(delegate: WebsocketDelegateInterface)
+    func startPinger(delegate: WebsocketDelegateInterface, interval: TimeInterval)
     func send(_ data: Data) -> AnyPublisher<Void, Error>
 }
 
 // conformance
 
 extension URLSessionWebSocketTask : TaskInterface {
-    func startListener(delegate: WebsocketDelegate){
+    func startListener(delegate: WebsocketDelegateInterface){
         recieveData { [weak self] result in
             switch result {
             
@@ -26,15 +26,15 @@ extension URLSessionWebSocketTask : TaskInterface {
                 delegate.task(didRecieveData: data)
                 
             case .failure(let error):
-                delegate.task(didDisconnect: Failure.listenerError(error))
+                delegate.task(didDisconnect: RSFailure.listenerError(error))
             }
         }
     }
     
-    func startPinger(delegate: WebsocketDelegate, interval: TimeInterval = 10){
+    func startPinger(delegate: WebsocketDelegateInterface, interval: TimeInterval = 10){
         sendPing { [weak self] error in
             if let error = error {
-                delegate.task(didDisconnect: Failure.pingError(error))
+                delegate.task(didDisconnect: RSFailure.pingError(error))
             } else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + interval){
                     self?.startPinger(delegate: delegate, interval: interval)

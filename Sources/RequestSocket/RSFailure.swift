@@ -7,9 +7,9 @@
 
 import Foundation
 
-enum Failure : Error {
-    case encoding
-    case decoding
+public enum RSFailure : Error {
+    case encoding(Error)
+    case decoding(Error)
     case listenerError(Error)
     case pingError(Error)
     case messageError(Error)

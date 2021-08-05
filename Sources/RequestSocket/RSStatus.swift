@@ -7,18 +7,17 @@
 
 import Foundation
 
-enum Status {
+enum RSStatus {
+    case connecting
     case opened(socket: TaskInterface)
     case closed(error: Error? = nil)
 }
 
-extension Status {
+extension RSStatus {
     var isConnected : Bool {
         switch self {
-            case .opened(socket: _):
-                return true
-            case .closed(error: _):
-                return false
+            case .opened: return true
+            default: return false
         }
     }
 }
