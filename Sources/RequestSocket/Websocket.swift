@@ -11,7 +11,6 @@ import Combine
 // conformance
 
 public final class Websocket : NSObject {
-    
     let request : URLRequest
     let encoder : JSONEncoder
     let decoder : JSONDecoder
@@ -32,7 +31,11 @@ public final class Websocket : NSObject {
         self.Session = Session
     }
     
-    public convenience init(request: URLRequest, encoder: JSONEncoder = .init(), decoder: JSONDecoder = .init()) {
+    public convenience init(
+        request: URLRequest,
+        encoder: JSONEncoder = .init(),
+        decoder: JSONDecoder = .init()
+    ) {
         self.init(request: request, encoder: encoder, decoder: decoder, Session: URLSession.self)
     }
 }
@@ -57,7 +60,12 @@ public extension Websocket {
 // internal API
 
 extension Websocket {
-    func mapStatus<Output: Decodable>(requestId: UUID, data: Data, timeout: DispatchQueue.SchedulerTimeType.Stride?, token: String?) -> AnyPublisher<Output, Error> {
+    func mapStatus<Output: Decodable>(
+        requestId: UUID,
+        data: Data,
+        timeout: DispatchQueue.SchedulerTimeType.Stride?,
+        token: String?
+    ) -> AnyPublisher<Output, Error> {
         print(#function)
         switch connectionStatus {
             case .connecting:
@@ -100,7 +108,11 @@ extension Websocket {
         return req
     }
     
-    func dataTaskPublisher<Output: Decodable>(requestId: UUID, task: TaskInterface, data: Data, timeout: DispatchQueue.SchedulerTimeType.Stride?) -> AnyPublisher<Output, Error> {
+    func dataTaskPublisher<Output: Decodable>(
+        requestId: UUID, task: TaskInterface,
+        data: Data,
+        timeout: DispatchQueue.SchedulerTimeType.Stride?
+    ) -> AnyPublisher<Output, Error> {
         print(#function)
         return task.send(data)
             .flatMap { [self] _ -> AnyPublisher<Output, Error> in
@@ -113,7 +125,10 @@ extension Websocket {
             .eraseToAnyPublisher()
     }
     
-    func timeoutPublisher<Output: Decodable>(requestId: UUID, timeout: DispatchQueue.SchedulerTimeType.Stride) -> AnyPublisher<Output, Error> {
+    func timeoutPublisher<Output: Decodable>(
+        requestId: UUID,
+        timeout: DispatchQueue.SchedulerTimeType.Stride
+    ) -> AnyPublisher<Output, Error> {
         print(#function)
         return requestSubject
             .first { $0.requestId == requestId }
@@ -159,7 +174,7 @@ extension Websocket : WebsocketDelegateInterface {
         print(#function)
         webSocketTask.startListener(delegate: self)
         webSocketTask.startPinger(delegate: self)
-        connectionStatus = .opened(socket: webSocketTask)
         didConnectSubject.send(webSocketTask)
+        connectionStatus = .opened(socket: webSocketTask)
     }
 }
