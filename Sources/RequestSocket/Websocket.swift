@@ -16,8 +16,8 @@ public final class Websocket : NSObject {
     let decoder : JSONDecoder
     let Session : SessionInterface.Type
     var connectionStatus = RSStatus.closed(error: nil)
-    let requestSubject = PassthroughSubject<(requestId: UUID, data: Data), Error>()
-    let didConnectSubject = PassthroughSubject<TaskInterface, Never>()
+    let requestSubject = PassthroughSubject<(requestId: UUID, data: Data), RSFailure>()
+    let connectionSubject = PassthroughSubject<TaskInterface, ConnectionFailure>()
     
     init(
         request: URLRequest,
@@ -48,9 +48,7 @@ public extension Websocket {
         withTimeout timeout: DispatchQueue.SchedulerTimeType.Stride? = 8,
         withBearerToken token: String? = nil
     ) -> AnyPublisher<Output, Error> {
-        print(#function)
         let request = WSRequest(payload: payload)
-        
         return request.encode(with: encoder)
             .flatMap { self.mapStatus(requestId: request.id, data: $0, timeout: timeout, token: token) }
             .eraseToAnyPublisher()
@@ -66,10 +64,10 @@ extension Websocket {
         timeout: DispatchQueue.SchedulerTimeType.Stride?,
         token: String?
     ) -> AnyPublisher<Output, Error> {
-        print(#function)
         switch connectionStatus {
             case .connecting:
-                return didConnectSubject
+                return connectionSubject
+                    .mapError(RSFailure.connection)
                     .flatMap { task in
                         self.dataTaskPublisher(requestId: requestId, task: task, data: data, timeout: timeout)
                     }
@@ -80,6 +78,7 @@ extension Websocket {
                 
             case .closed:
                 return connect(withToken: token)
+                    .mapError(RSFailure.connection)
                     .flatMap { task in
                         self.dataTaskPublisher(requestId: requestId, task: task, data: data, timeout: timeout)
                     }
@@ -87,20 +86,18 @@ extension Websocket {
         }
     }
     
-    func connect(withToken token: String?) -> AnyPublisher<TaskInterface, Never> {
-        print(#function)
-        return Deferred { [self] () -> AnyPublisher<TaskInterface, Never> in
+    func connect(withToken token: String?) -> AnyPublisher<TaskInterface, ConnectionFailure> {
+        Deferred { [self] () -> AnyPublisher<TaskInterface, ConnectionFailure> in
             connectionStatus = .connecting
             let session = Session.init(configuration: .default, delegate: self, delegateQueue: nil)
             let req = prepareRequest(bearerToken: token)
             session.startWebsocket(with: req)
             
-            return didConnectSubject.eraseToAnyPublisher()
+            return connectionSubject.eraseToAnyPublisher()
         }.eraseToAnyPublisher()
     }
     
     func prepareRequest(bearerToken token: String?) -> URLRequest {
-        print(#function)
         var req = request
         if let token = token {
             req.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -113,8 +110,7 @@ extension Websocket {
         data: Data,
         timeout: DispatchQueue.SchedulerTimeType.Stride?
     ) -> AnyPublisher<Output, Error> {
-        print(#function)
-        return task.send(data)
+        task.send(data)
             .flatMap { [self] _ -> AnyPublisher<Output, Error> in
                 if let to = timeout {
                     return timeoutPublisher(requestId: requestId, timeout: to)
@@ -129,8 +125,7 @@ extension Websocket {
         requestId: UUID,
         timeout: DispatchQueue.SchedulerTimeType.Stride
     ) -> AnyPublisher<Output, Error> {
-        print(#function)
-        return requestSubject
+        requestSubject
             .first { $0.requestId == requestId }
             .timeout(timeout, scheduler: DispatchQueue.main)
             .map(\.data)
@@ -140,8 +135,7 @@ extension Websocket {
     }
     
     func continuousPublisher<Output: Decodable>(requestId: UUID) -> AnyPublisher<Output, Error> {
-        print(#function)
-        return requestSubject
+        requestSubject
             .filter { $0.requestId == requestId }
             .map(\.data)
             .decode(type: WSResponse<Output>.self, decoder: decoder)
@@ -154,7 +148,6 @@ extension Websocket {
 
 extension Websocket : WebsocketDelegateInterface {
     func task(didRecieveData data: Data) {
-        print(#function)
         do {
             let info = try decoder.decode(WSResponseInfo.self, from: data)
             let tuple = (requestId: info.requestId, data: data)
@@ -165,16 +158,18 @@ extension Websocket : WebsocketDelegateInterface {
     }
     
     func task(didDisconnect error: RSFailure) {
-        print(#function)
         connectionStatus = .closed(error: error)
         requestSubject.send(completion: .failure(error))
     }
     
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        print(#function)
         webSocketTask.startListener(delegate: self)
         webSocketTask.startPinger(delegate: self)
-        didConnectSubject.send(webSocketTask)
+        connectionSubject.send(webSocketTask)
         connectionStatus = .opened(socket: webSocketTask)
+    }
+    
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        connectionSubject.send(completion: .failure(.unknown(error)))
     }
 }

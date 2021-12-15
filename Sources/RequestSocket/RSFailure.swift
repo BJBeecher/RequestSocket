@@ -15,4 +15,5 @@ public enum RSFailure : Error {
     case messageError(Error)
     case notConnected
     case timeout
+    case connection(ConnectionFailure)
 }
